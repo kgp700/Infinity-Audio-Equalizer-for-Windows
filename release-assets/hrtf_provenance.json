@@ -1,0 +1,85 @@
+{
+  "verified_on": "2026-11-02",
+  "original_authors": [
+    "Bill Gardner",
+    "Keith Martin"
+  ],
+  "original_rightsholder": "MIT Media Laboratory, 1994",
+  "original_terms_url": "https://sound.media.mit.edu/resources/KEMAR.html",
+  "comparison_source": {
+    "filename": "MIT_KEMAR_normal_pinna.sofa",
+    "sha256": "2768ac841213a7ae11d1ea7fd0f25a69b39216102dc5dd913ea6ba0f0dc57e28"
+  },
+  "files": [
+    {
+      "file": "kemar_hrir_data.bin",
+      "sha256": "8d9ec8c54141a3509e5a56be9c630db15f9321c5e261f63876324206afed43b1",
+      "decimal_places": 7,
+      "directions": [
+        {
+          "profile": "natural",
+          "azimuth_degrees": 25,
+          "elevation_degrees": 0,
+          "ears": 2,
+          "samples_per_ear": 512,
+          "maximum_absolute_error": 5.000000000143778e-08
+        },
+        {
+          "profile": "cinema",
+          "azimuth_degrees": 45,
+          "elevation_degrees": 0,
+          "ears": 2,
+          "samples_per_ear": 512,
+          "maximum_absolute_error": 5.000000000143778e-08
+        },
+        {
+          "profile": "stage",
+          "azimuth_degrees": 65,
+          "elevation_degrees": 0,
+          "ears": 2,
+          "samples_per_ear": 512,
+          "maximum_absolute_error": 4.960937499990867e-08
+        }
+      ]
+    },
+    {
+      "file": "surround3_hrir.bin",
+      "sha256": "cecf8334e2642d9b76ebde7a91e6b7c818ed1208b5c20b656ce3978f2f2595d5",
+      "decimal_places": 8,
+      "directions": [
+        {
+          "profile": "front",
+          "azimuth_degrees": 0,
+          "elevation_degrees": 0,
+          "ears": 2,
+          "samples_per_ear": 512,
+          "maximum_absolute_error": 4.999999999970306e-09
+        },
+        {
+          "profile": "rear_natural",
+          "azimuth_degrees": 125,
+          "elevation_degrees": 0,
+          "ears": 2,
+          "samples_per_ear": 512,
+          "maximum_absolute_error": 4.999999999970306e-09
+        },
+        {
+          "profile": "rear_cinema",
+          "azimuth_degrees": 140,
+          "elevation_degrees": 0,
+          "ears": 2,
+          "samples_per_ear": 512,
+          "maximum_absolute_error": 4.999999999970306e-09
+        },
+        {
+          "profile": "rear_stage",
+          "azimuth_degrees": 155,
+          "elevation_degrees": 0,
+          "ears": 2,
+          "samples_per_ear": 512,
+          "maximum_absolute_error": 4.999999999970306e-09
+        }
+      ]
+    }
+  ]
+}

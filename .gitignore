@@ -1,0 +1,100 @@
+# Windows / .NET / IDE intermediates
+.vs/
+.idea/
+.vscode/
+bin/
+obj/
+release/
+Release/
+Debug/
+*.user
+*.suo
+*.pdb
+*.ilk
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Generated build timestamp (not source)
+/build_metadata.json
+
+# Local binaries: source stays in Git, binaries belong in Releases
+/InfinityCompressor.vst3/
+*.dll
+*.exe
+*.msi
+*.msix
+*.msixbundle
+*.vst3
+*.zip
+*.7z
+*.pfx
+*.p12
+*.pem
+*.key
+
+# External VST3 SDK checkout / generated native builds
+/vst3/vst3sdk/
+/vst3/build/
+/vst3/.vs/
+/vst3/CMakeFiles/
+
+# Local app configuration and cached/generated audio filters
+/settings.json
+/settings*.json
+/managed.txt
+/*.wav
+/logs/
+/Logs/
+
+# Inno Setup compiler outputs
+/installer/Output/
+/installer/output/
+
+
+# MSIX test output / local certificates
+/msix/stage/
+/release/msix/
+*.cer
+*.pfx
+
+# WiX/MSI-generated build intermediates
+/installer/bin/
+/installer/obj/
+
+# Additional WiX Toolset / Windows Installer generated artifacts
+# Keep .wxs/.wxi/.wixproj sources tracked.
+*.wixobj
+*.wixlib
+*.wixout
+*.wixmst
+*.wixmsp
+*.wixpdb
+*.cab
+*.msp
+*.mst
+*.msm
+
+# Common generated release/staging and local signing files
+/artifacts/
+/dist/
+/build/
+/installer/stage/
+/installer/staging/
+*.snk
+*.pvk
+*.spc
+
+# Common .NET / Windows build caches and diagnostics
+TestResults/
+*.binlog
+*.tlog
+*.lastbuildstate
+*.cache
+*.obj
+*.idb
+*.ipch
+*.exp
+*.lib

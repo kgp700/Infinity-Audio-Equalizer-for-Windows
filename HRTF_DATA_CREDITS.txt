@@ -1,0 +1,31 @@
+MIT KEMAR HRTF / HRIR measurement data
+Copyright 1994 MIT Media Laboratory.
+Authors: Bill Gardner and Keith Martin.
+Original reference and conditions: https://sound.media.mit.edu/resources/KEMAR.html
+The original authors provide the data free with no restrictions on use,
+provided the authors are cited in research or commercial applications.
+This attribution is retained for all distributions, including free releases.
+
+Source representation used for numerical verification:
+MIT_KEMAR_normal_pinna.sofa from the libmysofa data distribution.
+Sampling: 44100 Hz; normal pinna; elevation 0 degrees; distance 1.4 m;
+512 samples per ear. SOFA is a container; its generic placeholder metadata
+is not used as a substitute for the original MIT authors' stated conditions.
+
+kemar_hrir_data.bin:
+ natural = azimuth 25 degrees, cinema = 45, stage = 65; left/right ears.
+ Values rounded to 7 decimal places from the source representation.
+surround3_hrir.bin:
+ front = azimuth 0 degrees; rear_natural = 125, rear_cinema = 140,
+ rear_stage = 155; left/right ears. Values rounded to 8 decimal places.
+Azimuth follows the source SOFA convention, not a promise of perceived direction.
+
+All 7168 coefficients were compared to the matching source directions on
+2026-11-02. Maximum absolute differences: <=5.1e-8 for kemar_hrir_data.bin,
+<=5.1e-9 for surround3_hrir.bin. Hashes and sample mappings are recorded in
+release-assets/hrtf_provenance.json in the source package.
+
+The application creates derived reverberation/filter signals using these data;
+resampling, filtering, level adjustment and channel mixing are performed by
+this application's source. No libmysofa binary or code is linked into the app.
+This is a generalized dummy-head measurement, not a personalized HRTF.

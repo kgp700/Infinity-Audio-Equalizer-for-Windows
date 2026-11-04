@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>InfinityAudioEqualizerProWindows</AssemblyName>
+    <RootNamespace>InfinityAudioEqualizerPro</RootNamespace>
+    <ApplicationIcon>assets\Infinity_Audio_Equalizer.ico</ApplicationIcon>
+    <Version>0.8.28.0</Version>
+    <FileVersion>0.8.28.0</FileVersion>
+    <InformationalVersion>0.8.28 Beta</InformationalVersion>
+    <AssemblyTitle>Infinity Audio Equalizer Pro for Windows</AssemblyTitle>
+    <Company>KGP Software Lab</Company>
+    <Copyright>Copyright (c) 2026 KGP Software Lab. MIT License.</Copyright>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
+    <None Update="legal\**\*.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="build_metadata.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="THIRD_PARTY_NOTICES.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="THIRD_PARTY_LICENSES\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="HRTF_DATA_CREDITS.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="USER_GUIDE.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="assets\Infinity_Audio_Equalizer.ico" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="assets\Infinity_Audio_Equalizer_256.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="surround3_hrir.bin" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="kemar_hrir_data.bin" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="InfinityCompressor.vst3\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

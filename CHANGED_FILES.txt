@@ -1,0 +1,7 @@
+src/MainForm.cs
+InfinityAudioEqualizerPro.csproj
+installer/InfinityAudioEqualizerPro.iss (version metadata only; Inno distribution disabled)
+USER_GUIDE.md
+RELEASE_NOTES_DEVELOPER.md
+RELEASE_NOTES_USER.md
+CHANGED_FILES.txt

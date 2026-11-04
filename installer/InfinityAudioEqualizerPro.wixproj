@@ -1,0 +1,14 @@
+<Project Sdk="WixToolset.Sdk/6.0.2">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <DefineConstants>AppVersion=$(AppVersion);PublishDir=$(PublishDir)</DefineConstants>
+    <OutputPath>..\release\installer\</OutputPath>
+    <OutputName>Infinity-Audio-Equalizer-Pro-Windows-$(AppVersion)-Beta-Setup</OutputName>
+    <SuppressValidation>false</SuppressValidation>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Provides the standard, interactive MSI installation dialogs. -->
+    <PackageReference Include="WixToolset.UI.wixext" Version="6.0.2" />
+  </ItemGroup>
+</Project>

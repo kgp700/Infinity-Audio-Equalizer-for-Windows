@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <!-- Separate MSI upgrade identity; do not share Inno's uninstall identity. -->
+  <Package Name="Infinity Audio Equalizer Pro for Windows"
+           Manufacturer="KGP Software Lab"
+           Version="$(var.AppVersion)"
+           UpgradeCode="{B709D728-0D4B-4DB6-95B6-71B4BC971CC8}"
+           Scope="perMachine" InstallerVersion="500" Language="1033">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Infinity Audio Equalizer Pro is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- FeatureTree supports both an install path picker and optional shortcut features. -->
+    <ui:WixUI Id="WixUI_FeatureTree" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUIBannerBmp" Value="$(sys.SOURCEFILEDIR)assets\blue_banner.bmp" />
+    <WixVariable Id="WixUIDialogBmp" Value="$(sys.SOURCEFILEDIR)assets\blue_dialog.bmp" />
+    <!-- Built-in ExitDialog checkbox: only shown after a successful interactive install. -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Infinity Audio Equalizer Pro" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <CustomAction Id="LaunchAppAfterInstall" FileRef="MainExeFile" ExeCommand="" Execute="immediate" Impersonate="yes" Return="asyncNoWait" />
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchAppAfterInstall" Order="1" Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed AND NOT REMOVE" />
+    </UI>
+    <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)LICENSE_MSI.rtf" />
+
+    <!-- MSI intentionally never installs into the Inno-managed directory. -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Infinity Audio Equalizer Pro" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ProgramMenuAppFolder" Name="Infinity Audio Equalizer Pro for Windows" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <!-- Main executable is a per-machine file component. Keep user-profile
+         shortcuts out of it to satisfy Windows Installer ICE43 and ICE57. -->
+    <Component Id="MainExecutable" Directory="INSTALLFOLDER" Guid="{92E5C98C-0BE9-4F14-83DA-A8D27E411509}">
+      <File Id="MainExeFile" Source="$(var.PublishDir)\InfinityAudioEqualizerProWindows.exe" KeyPath="yes" />
+    </Component>
+
+    <!-- Directory-formatted shortcut target avoids cross-feature file token ICE69. -->
+    <!-- A non-advertised Start Menu shortcut requires an HKCU registry KeyPath.
+         RemoveFolder ensures the shortcut directory is cleaned at uninstall (ICE64). -->
+    <Component Id="StartMenuShortcutComponent" Directory="ProgramMenuAppFolder" Guid="{6C7F8972-81D2-45D8-89DA-3CFB33B3EB45}">
+      <Shortcut Id="StartMenuShortcut" Name="Infinity Audio Equalizer Pro for Windows"
+                Target="[INSTALLFOLDER]InfinityAudioEqualizerProWindows.exe" WorkingDirectory="INSTALLFOLDER" Advertise="no" />
+      <RemoveFolder Id="RemoveProgramMenuAppFolder" Directory="ProgramMenuAppFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\KGP Software Lab\Infinity Audio Equalizer Pro for Windows\MSI"
+                     Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!-- Optional per-user desktop shortcut; a separate HKCU registry key path avoids ICE43/57.
+         Target uses install directory instead of cross-feature [#File] reference to avoid ICE69.
+         FeatureTree UI controls this feature independently from the core application. -->
+    <Component Id="DesktopShortcutComponent" Directory="DesktopFolder" Guid="{417357C3-85E5-428A-9654-7E6EC7D43881}">
+      <Shortcut Id="DesktopAppShortcut" Name="Infinity Audio Equalizer Pro for Windows"
+                Target="[INSTALLFOLDER]InfinityAudioEqualizerProWindows.exe" WorkingDirectory="INSTALLFOLDER" Advertise="no" />
+      <RegistryValue Root="HKCU" Key="Software\KGP Software Lab\Infinity Audio Equalizer Pro for Windows\MSI"
+                     Name="DesktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+
+    <!-- Harvest all other published files including managed VST3 and native libraries. -->
+    <ComponentGroup Id="PublishedPayload">
+      <Files Directory="INSTALLFOLDER" Include="$(var.PublishDir)\**">
+      <Exclude Files="$(var.PublishDir)\InfinityAudioEqualizerProWindows.exe" />
+      <Exclude Files="**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+    <Feature Id="MainFeature" Title="Infinity Audio Equalizer Pro" Level="1"
+             Description="Core application, audio engine, and installed assets" Display="expand"
+             ConfigurableDirectory="INSTALLFOLDER" AllowAbsent="no" AllowAdvertise="no">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentGroupRef Id="PublishedPayload" />
+      <Feature Id="StartMenuFeature" Title="Start Menu shortcut" Level="1"
+               Description="Create a Start Menu shortcut" AllowAbsent="yes" AllowAdvertise="no">
+        <ComponentRef Id="StartMenuShortcutComponent" />
+      </Feature>
+      <Feature Id="DesktopFeature" Title="Desktop shortcut" Level="1"
+               Description="Create a desktop shortcut" AllowAbsent="yes" AllowAdvertise="no">
+        <ComponentRef Id="DesktopShortcutComponent" />
+      </Feature>
+    </Feature>
+
+    <!-- Uninstall: detach only our owned APO include before deleting plugin files.
+         Do not run during MSI major upgrade; the new app may still use this include. -->
+    <CustomAction Id="DetachApoOnRemove" FileRef="MainExeFile"
+                  ExeCommand="--uninstall-detach" Execute="deferred"
+                  Impersonate="no" Return="check" />
+    <InstallExecuteSequence>
+      <Custom Action="DetachApoOnRemove" Before="RemoveFiles"
+              Condition="REMOVE = &quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

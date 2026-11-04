@@ -1,0 +1,51 @@
+{
+  "format": "infinity-audio-compressor",
+  "version": 1,
+  "bands": [
+    {
+      "cutoff": 120,
+      "threshold": -35.0,
+      "ratio": 6.0,
+      "attack": 5.0,
+      "release": 250.0,
+      "knee": 0.0,
+      "gain": 0.0
+    },
+    {
+      "cutoff": 700,
+      "threshold": -35.0,
+      "ratio": 6.0,
+      "attack": 5.0,
+      "release": 250.0,
+      "knee": 0.0,
+      "gain": 0.0
+    },
+    {
+      "cutoff": 3500,
+      "threshold": -35.0,
+      "ratio": 6.0,
+      "attack": 5.0,
+      "release": 250.0,
+      "knee": 0.0,
+      "gain": 0.0
+    },
+    {
+      "cutoff": 8500,
+      "threshold": -35.0,
+      "ratio": 6.0,
+      "attack": 5.0,
+      "release": 250.0,
+      "knee": 0.0,
+      "gain": 0.0
+    },
+    {
+      "cutoff": 20000,
+      "threshold": -35.0,
+      "ratio": 6.0,
+      "attack": 5.0,
+      "release": 250.0,
+      "knee": 0.0,
+      "gain": 0.0
+    }
+  ]
+}

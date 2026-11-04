@@ -1,0 +1,14 @@
+{
+  "packaging": "C# full development package",
+  "plugin_binary_sha256": "33bfc6d5e20000e68c8ff485b8f2c87a2563edfd4085f5c9b6bba1d500848a8a",
+  "plugin_binary_source_match_verified": false,
+  "sdk_exact_version_verified": false,
+  "license_review_complete": false,
+  "reason": "Bundled binary from previous development package; source extracted from matched historical Python source, but reproducible build provenance not verified",
+  "source_files": [
+    "vst3/src/plugin.cpp",
+    "vst3/src/compressor_core.h",
+    "vst3/CMakeLists.txt"
+  ],
+  "release_condition": "Rebuild/verify with VST3 SDK 3.8+ MIT and submodule notices before official binary release."
+}

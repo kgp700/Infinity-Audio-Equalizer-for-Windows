@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap10 rescap">
+  <Identity Name="KGPSoftwareLab.InfinityAudioEqualizerPro" Publisher="CN=KGP Software Lab MSIX Test"
+    Version="0.8.6.0" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Infinity Audio Equalizer Pro for Windows</DisplayName>
+    <PublisherDisplayName>KGP Software Lab</PublisherDisplayName>
+    <Description>Infinity Audio Equalizer Pro for Windows</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Resources><Resource Language="ko-KR" /></Resources>
+  <Dependencies><TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" /></Dependencies>
+  <Applications>
+    <Application Id="InfinityAudioEqualizerPro" Executable="InfinityAudioEqualizerProWindows.exe"
+      uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="mediumIL">
+      <uap:VisualElements DisplayName="Infinity Audio Equalizer Pro for Windows"
+        Description="Infinity Audio Equalizer Pro for Windows"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
+    </Application>
+  </Applications>
+  <Capabilities><rescap:Capability Name="runFullTrust" /></Capabilities>
+</Package>
