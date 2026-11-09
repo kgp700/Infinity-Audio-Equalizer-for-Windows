@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -8,9 +8,9 @@
     <AssemblyName>InfinityAudioEqualizerProWindows</AssemblyName>
     <RootNamespace>InfinityAudioEqualizerPro</RootNamespace>
     <ApplicationIcon>assets\Infinity_Audio_Equalizer.ico</ApplicationIcon>
-    <Version>0.8.28.0</Version>
-    <FileVersion>0.8.28.0</FileVersion>
-    <InformationalVersion>0.8.28 Beta</InformationalVersion>
+    <Version>0.8.45.0</Version>
+    <FileVersion>0.8.45.0</FileVersion>
+    <InformationalVersion>0.8.45 Beta</InformationalVersion>
     <AssemblyTitle>Infinity Audio Equalizer Pro for Windows</AssemblyTitle>
     <Company>KGP Software Lab</Company>
     <Copyright>Copyright (c) 2026 KGP Software Lab. MIT License.</Copyright>

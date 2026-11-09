@@ -25,6 +25,31 @@ Console.WriteLine("PASS: first-run master OFF and persisted ON/OFF across launch
 
 // New profiles prepare user-preferred spatial and compressor values without
 // activating the Surround Stage or the compressor by themselves.
+// Screenshot-approved factory: one exact baseline for fresh and reset endpoints.
+var canonicalDefaults = DeviceProfileDefaults.Create("Galaxy Buds3");
+Check(canonicalDefaults.Name == "Galaxy Buds3" && canonicalDefaults.Enabled &&
+      canonicalDefaults.AutoEnabled && canonicalDefaults.CustomEnabled &&
+      canonicalDefaults.PreampMode == "manual" && canonicalDefaults.ManualPreamp == -5 &&
+      !canonicalDefaults.LowLatency && canonicalDefaults.StereoWidth == 16 &&
+      !canonicalDefaults.StereoWidthEnabled &&
+      !canonicalDefaults.SurroundEnabled && canonicalDefaults.Surround3Enabled &&
+      canonicalDefaults.SurroundBinaural && !canonicalDefaults.SurroundStable &&
+      !canonicalDefaults.SurroundBalanced && canonicalDefaults.SurroundMode == "cinema" &&
+      canonicalDefaults.SurroundStrength == 45 && canonicalDefaults.SurroundCenter == 80 &&
+      canonicalDefaults.SurroundSpread == 45 &&
+      canonicalDefaults.Surround3Depth == 80 && canonicalDefaults.Surround3Rear == 75 &&
+      canonicalDefaults.Surround3Front == 75 && canonicalDefaults.Surround3Separation == 80 &&
+      canonicalDefaults.SurroundBalanceStability == 65 && canonicalDefaults.SurroundBalanceSpace == 80 &&
+      canonicalDefaults.SurroundBalanceDepth == 55 &&
+      !canonicalDefaults.AmbienceEnabled && canonicalDefaults.AmbienceStrength == 3 &&
+      canonicalDefaults.AmbienceDecay == 1000 && canonicalDefaults.AmbienceRateAuto &&
+      !canonicalDefaults.CompressorEnabled && canonicalDefaults.CompressorTheme == "OPEN" &&
+      canonicalDefaults.CompressorStrength == 12 &&
+      canonicalDefaults.Custom.Count == 31 && canonicalDefaults.Custom.All(x => x == 0),
+      "Screenshot-approved new device/reset baseline drifted");
+Check(new AppSettings().Startup && !new AppSettings().GlobalEnabled && new AppSettings().BypassAllEffects,
+      "First-run global OFF/startup-ON defaults drifted");
+Console.WriteLine("PASS: screenshot-approved profile values and master OFF baseline");
 var newProfileDefaults = new DeviceProfile();
 Check(newProfileDefaults.AmbienceDecay == 1000, "Studio Ambience default decay must be 1000ms");
 Check(newProfileDefaults.SurroundMode == "cinema" && newProfileDefaults.SurroundBinaural &&
@@ -132,16 +157,16 @@ string rootChoiceTest = Path.Combine(Path.GetTempPath(), "InfinityAudioEqualizer
 try
 {
     string registered = Path.Combine(rootChoiceTest, "registered");
-    string saved = Path.Combine(rootChoiceTest, "saved-old");
+    string savedConfigPath = Path.Combine(rootChoiceTest, "saved-old");
     Directory.CreateDirectory(registered);
-    Directory.CreateDirectory(saved);
+    Directory.CreateDirectory(savedConfigPath);
     File.WriteAllText(Path.Combine(registered, "config.txt"), "# active XT config\n");
-    File.WriteAllText(Path.Combine(saved, "config.txt"), "# unused legacy config\n");
-    Check(ApoBridge.ChooseConfigDirectory(saved, registered, []) == Path.GetFullPath(registered),
+    File.WriteAllText(Path.Combine(savedConfigPath, "config.txt"), "# unused legacy config\n");
+    Check(ApoBridge.ChooseConfigDirectory(savedConfigPath, registered, []) == Path.GetFullPath(registered),
         "Old saved APO path shadowed registered ConfigPath (silent no-effect issue)");
-    Check(ApoBridge.ChooseConfigDirectory(saved, null, [registered]) == Path.GetFullPath(registered),
+    Check(ApoBridge.ChooseConfigDirectory(savedConfigPath, null, [registered]) == Path.GetFullPath(registered),
         "Canonical XT config directory lost priority to old saved path");
-    Check(ApoBridge.ChooseConfigDirectory(saved, null, []) == Path.GetFullPath(saved),
+    Check(ApoBridge.ChooseConfigDirectory(savedConfigPath, null, []) == Path.GetFullPath(savedConfigPath),
         "Legacy config fallback not available");
 }
 finally { try { Directory.Delete(rootChoiceTest, recursive:true); } catch (IOException) {} }
@@ -288,6 +313,7 @@ Check(!newDefaults.SurroundEnabled && newDefaults.SurroundBinaural && newDefault
       newDefaults.CompressorTheme == "OPEN" && newDefaults.CompressorStrength == 12,
       "New-device defaults do not match the requested spatial/ambience/compressor settings");
 newDefaults.SurroundEnabled = true;
+// HRTF is already selected by default; enabling Surround Stage activates this pipeline.
 var defaultHrtfCommands = ApoRenderer.RenderProfile(newDefaults, Path.Combine(Path.GetTempPath(), "InfinityCompressor.vst3"));
 Check(defaultHrtfCommands.Count(x => x.StartsWith("Convolution:", StringComparison.Ordinal)) == 4 &&
       defaultHrtfCommands.Any(x => x.Contains("infinity_parallel_hrtf_v5_")) &&
@@ -596,3 +622,195 @@ Check(restoredLines.Any(x=>x.StartsWith("VSTPlugin:")) &&
       !restoredLines.Any(x=>x.Contains("diagnostic_v3_")),
       "Ending the reverb test must restore all normal effects");
 Console.WriteLine("PASS: temporary reverb test, restored audio chain, non-persistent diagnostic state");
+
+// Driver replacement: the Windows endpoint ID may change while the actual
+// physical speaker/headset remains the same. Full backup restoration must keep
+// archived device profiles and clone every effect field to the new endpoint.
+var oldEndpoint="{OLD-DEVICE}";
+var newEndpoint="{NEW-DEVICE}";
+var backup=new AppSettings{GlobalEnabled=true,BypassAllEffects=false};
+var saved=new DeviceProfile {Name="Speakers (USB DAC)",CustomEnabled=true,AutoEnabled=true,
+    CompressorEnabled=true,CompressorTheme="CUSTOM",SurroundEnabled=true,AmbienceEnabled=true};
+saved.Custom[0]=3.2;saved.Custom[16]=-4.3;saved.Custom[30]=5.1;
+saved.AutoFilters.Add(new AutoFilter {Type="PK",Frequency=1220,Gain=2.5,Q=1.1});
+saved.CompressorCustomBands.Add(new CompressorBand {Cutoff=120,Threshold=-20,Ratio=2,Attack=12,Release=100,Knee=3,Gain=0});
+backup.Profiles[oldEndpoint]=saved;
+var newDevices=new List<AudioDevice>{new(newEndpoint,"Speakers (USB DAC)","new-guid")};
+var unmatchedDevices=FullSettingsRestore.FindUnmatchedCurrentDevices(backup,newDevices);
+var archivedProfiles=FullSettingsRestore.FindArchivedProfiles(backup,newDevices);
+Check(unmatchedDevices.Count==1 && archivedProfiles.Count==1,"Driver replacement must detect missing original endpoint ID");
+Check(FullSettingsRestore.SuggestMappings(archivedProfiles,unmatchedDevices)[oldEndpoint]==newEndpoint,
+    "Unique exact device name should be suggested for review");
+Check(FullSettingsRestore.SuggestMappingsWithDefault(archivedProfiles,unmatchedDevices,newEndpoint)[oldEndpoint]==newEndpoint,
+    "Default playback device must be initially selected in full restore");
+var restoreProfiles=new Dictionary<string,DeviceProfile>(StringComparer.OrdinalIgnoreCase)
+{
+    ["old-unrelated"]=new DeviceProfile{Name="Other speakers"},
+    ["old-primary"]=new DeviceProfile{Name="Main headset"},
+    ["old-usb"]=new DeviceProfile{Name="USB audio"}
+};
+var restoreTargets=new List<AudioDevice>
+{
+    new("new-usb","USB audio","usb-guid"),
+    new("new-primary","Main headset","main-guid")
+};
+var restoreMapping=FullSettingsRestore.SuggestMappingsWithDefault(restoreProfiles,restoreTargets,"new-primary");
+Check(restoreMapping.Count==2 && restoreMapping["old-primary"]=="new-primary" &&
+      restoreMapping["old-usb"]=="new-usb" && !restoreMapping.ContainsKey("old-unrelated"),
+      "Default playback device must be preferred by name without mapping unrelated archived profiles");
+var restoreFallback=FullSettingsRestore.SuggestMappingsWithDefault(restoreProfiles,restoreTargets,"missing-default");
+Check(restoreFallback.Count==2 &&
+      restoreFallback.TryGetValue("old-usb",out var fallbackUsb) && fallbackUsb=="new-usb" &&
+      restoreFallback.TryGetValue("old-primary",out var fallbackPrimary) && fallbackPrimary=="new-primary" &&
+      !restoreFallback.ContainsKey("old-unrelated"),
+      "Missing Windows default output must retain exact-name matches and never map an unrelated archived profile");
+Check(FullSettingsRestore.SuggestMappingsWithDefault(restoreProfiles,Array.Empty<AudioDevice>(),"new-primary").Count==0,
+      "No output devices must create no automatic mappings");
+Console.WriteLine("PASS: full-backup dialog default playback selection and distinct device matching");
+Check(FullSettingsRestore.ApplyMappings(backup,new Dictionary<string,string>{{oldEndpoint,newEndpoint}},newDevices)==1,
+    "User-approved mapping must create new endpoint profile");
+Check(backup.Profiles.ContainsKey(oldEndpoint) && backup.Profiles.ContainsKey(newEndpoint),
+    "Restoration must preserve archived endpoint profile");
+var moved=backup.Profiles[newEndpoint];
+Check(moved.Custom.Count==31 && moved.Custom[0]==3.2 && moved.Custom[16]==-4.3 && moved.Custom[30]==5.1,
+    "31-band EQ must survive driver replacement");
+Check(moved.AutoFilters.Count==1 && moved.CompressorEnabled && moved.CompressorCustomBands.Count==1 &&
+      moved.SurroundEnabled && moved.AmbienceEnabled,"Audio effects were lost during endpoint migration");
+moved.Custom[0]=0;
+Check(saved.Custom[0]==3.2,"New endpoint settings must not modify archived original profile");
+var conflictBackup=new AppSettings();
+conflictBackup.Profiles[oldEndpoint]=saved;
+try
+{
+    FullSettingsRestore.ApplyMappings(conflictBackup,new Dictionary<string,string>{{oldEndpoint,"invalid-device"}},newDevices);
+    throw new Exception("검증 실패: Invalid target was accepted");
+}
+catch(InvalidDataException) {assertions++;}
+Check(conflictBackup.Profiles.Count==1,"Invalid mapping must not partially mutate profiles");
+Console.WriteLine("PASS: full backup restores 31-band EQ and VST/AutoEQ after Windows endpoint ID changes");
+var exactBackup=new AppSettings();
+exactBackup.Profiles[newEndpoint]=new DeviceProfile{Name="Existing output"};
+Check(FullSettingsRestore.FindUnmatchedCurrentDevices(exactBackup,newDevices).Count==0 &&
+      FullSettingsRestore.FindArchivedProfiles(exactBackup,newDevices).Count==0,
+      "Exact endpoint-ID backup must not open remapping dialog");
+var duplicateBackup=new AppSettings();
+duplicateBackup.Profiles["old-1"]=new DeviceProfile{Name="Headset"};
+duplicateBackup.Profiles["old-2"]=new DeviceProfile{Name="Headset"};
+try
+{
+    FullSettingsRestore.ApplyMappings(duplicateBackup,new Dictionary<string,string>
+    { {"old-1",newEndpoint},{"old-2",newEndpoint} },newDevices);
+    throw new Exception("검증 실패: Duplicate endpoint mapping was accepted");
+}
+catch(InvalidDataException) {assertions++;}
+Check(duplicateBackup.Profiles.Count==2,"Duplicate mapping partially modified backup");
+Console.WriteLine("PASS: unchanged device IDs and duplicate mapping safety");
+
+// Full recovery snapshots preserve all device-specific DSP settings and are never
+// deleted or overwritten by subsequent snapshots. Tests use a temporary folder.
+string recoveryTestRoot=Path.Combine(Path.GetTempPath(),"InfinityRecoveryTest-"+Guid.NewGuid().ToString("N"));
+try
+{
+    var oldDevice=new DeviceProfile {Name="Galaxy Buds3",CustomEnabled=true,
+        CompressorEnabled=true,SurroundEnabled=true,AmbienceEnabled=true};
+    oldDevice.Custom[0]=4.5;
+    oldDevice.AutoEnabled=true;
+    oldDevice.AutoFilters.Add(new AutoFilter {Type="PK",Frequency=850,Gain=-2.2,Q=1.1});
+    oldDevice.CompressorCustomBands.Add(new CompressorBand {Ratio=2.4,Threshold=-14});
+    var backupState=new AppSettings();
+    backupState.Profiles["original-id"]=oldDevice;
+    string first=RecoveryBackupStore.SaveSnapshot(backupState,"before_new_endpoint",recoveryTestRoot);
+    oldDevice.Custom[0]=-3;
+    string second=RecoveryBackupStore.SaveSnapshot(backupState,"before_eq_reset",recoveryTestRoot);
+    Check(File.Exists(first) && File.Exists(second) && first!=second,"Snapshots must never overwrite or remove older files");
+    // One Bluetooth re-pairing can expose multiple fresh endpoint IDs. Their
+    // default profiles must not cause several confusing, different-looking
+    // copies of the same pre-pairing audio configuration.
+    string pairingFolder=Path.Combine(recoveryTestRoot,"pairing");
+    var pairingState=new AppSettings();
+    var tuned=new DeviceProfile {Name="Galaxy Buds3",AutoEnabled=true,SurroundEnabled=true};
+    tuned.Custom[8]=3.4;
+    tuned.AutoFilters.Add(new AutoFilter{Frequency=700,Gain=-2.5,Q=1.0});
+    pairingState.Profiles["old-buds-id"]=tuned;
+    string? pairingBackup=RecoveryBackupStore.SaveBeforeNewEndpointIfChanged(pairingState,pairingFolder);
+    Check(pairingBackup is not null && File.Exists(pairingBackup),"First new endpoint should create a durable snapshot");
+    pairingState.Profiles["fresh-render-one"]=new DeviceProfile{Name="Galaxy Buds3"};
+    pairingState.RecoveryPromptedDeviceIds.Add("fresh-render-one");
+    string? duplicateOne=RecoveryBackupStore.SaveBeforeNewEndpointIfChanged(pairingState,pairingFolder);
+    pairingState.Profiles["fresh-render-two"]=new DeviceProfile{Name="Galaxy Buds3 Hands-Free"};
+    string? duplicateTwo=RecoveryBackupStore.SaveBeforeNewEndpointIfChanged(pairingState,pairingFolder);
+    Check(duplicateOne is null && duplicateTwo is null &&
+          Directory.EnumerateFiles(pairingFolder,"*.json").Count()==1,
+          "Repeated new Bluetooth endpoint events must not generate duplicate backups");
+    var firstPairingContents=System.Text.Json.JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(pairingBackup!),SettingsStore.JsonOptions);
+    Check(firstPairingContents?.Profiles.Count==1 &&
+          firstPairingContents.Profiles["old-buds-id"].Custom[8]==3.4 &&
+          firstPairingContents.Profiles["old-buds-id"].AutoFilters.Count==1,
+          "New-endpoint snapshot must preserve the original tuned device before creating default profiles");
+    // Old 0.8.35-0.8.38 backup files can already contain multiple blank
+    // new-ID profiles. Hide those even when they appear inside a real snapshot.
+    string oldMultiFolder=Path.Combine(recoveryTestRoot,"old-multi");
+    var mixedSnapshot=new AppSettings();
+    mixedSnapshot.Profiles["old-buds-id"]=RecoveryBackupStore.CloneProfile(tuned);
+    mixedSnapshot.Profiles["new-blank-1"]=new DeviceProfile{Name="Galaxy Buds3"};
+    mixedSnapshot.Profiles["new-blank-2"]=new DeviceProfile{Name="Galaxy Buds3"};
+    RecoveryBackupStore.SaveSnapshot(mixedSnapshot,"before_new_endpoint",oldMultiFolder);
+    var historicalOptions=RecoveryBackupStore.FindRecoveryCandidates(
+        RecoveryBackupStore.ListEntries(new AppSettings(),oldMultiFolder),
+        "reconnected-buds-id","Galaxy Buds3",true);
+    Check(historicalOptions.Count==1 && historicalOptions[0].DeviceId=="old-buds-id" &&
+          historicalOptions[0].Profile.Custom[8]==3.4,
+          "Recovery list must exclude default-only profiles embedded in earlier multi-endpoint snapshots");
+    tuned.Custom[8]=5.8;
+    string? changedBackup=RecoveryBackupStore.SaveBeforeNewEndpointIfChanged(pairingState,pairingFolder);
+    Check(changedBackup is not null && changedBackup!=pairingBackup &&
+          Directory.EnumerateFiles(pairingFolder,"*.json").Count()==2,
+          "Genuine changes to previously tuned audio must create another permanent backup");
+    Console.WriteLine("PASS: one backup per unchanged audio state across repeated new Bluetooth endpoint IDs");
+    Check(RecoveryBackupStore.DeviceNamesMatch("스피커 (Sound BlasterX G5)","스피커(Sound BlasterX G5)"),
+        "Endpoint friendly names differing only in whitespace should be suggested together");
+    Check(!RecoveryBackupStore.DeviceNamesMatch("Sound BlasterX G5","Galaxy Buds3"),
+        "Different endpoints must not share name matches");
+    var backups=RecoveryBackupStore.ListEntries(backupState,recoveryTestRoot);
+    Check(backups.Any(x=>x.FromSnapshot && x.DeviceId=="original-id" && x.Profile.Custom[0]==4.5),
+        "Original 31-band EQ values were not preserved in recovery history");
+    var restored=backups.First(x=>x.FromSnapshot && x.Profile.Custom[0]==4.5).Profile;
+    Check(restored.AutoFilters.Count==1 && restored.CompressorCustomBands.Count==1 &&
+          restored.CompressorEnabled && restored.SurroundEnabled && restored.AmbienceEnabled,
+        "AutoEQ, compressor, and spatial effects were not preserved in recovery history");
+    // Never show the current endpoint as its own recovery source after pairing.
+    // An old-ID profile and snapshots are recoverable; unmodified new defaults
+    // must not compete with them even with "other devices" enabled.
+    var newEndpointProfile=new DeviceProfile{Name="Galaxy Buds3"};
+    var candidateState=new AppSettings();
+    candidateState.Profiles["new-buds-id"]=newEndpointProfile;
+    candidateState.Profiles["old-buds-id"]=oldDevice;
+    candidateState.Profiles["unmodified-other-id"]=new DeviceProfile{Name="Other DAC"};
+    var candidateEntries=RecoveryBackupStore.ListEntries(candidateState,recoveryTestRoot);
+    var recommended=RecoveryBackupStore.FindRecoveryCandidates(candidateEntries,"new-buds-id","Galaxy Buds3",false);
+    Check(recommended.Count>0 && recommended.All(x=>x.DeviceId!="new-buds-id") &&
+          recommended.Any(x=>x.DeviceId=="old-buds-id"),
+        "The current endpoint must never be listed as its own recovery source");
+    var expanded=RecoveryBackupStore.FindRecoveryCandidates(candidateEntries,"new-buds-id","Galaxy Buds3",true);
+    Check(!expanded.Any(x=>x.DeviceId=="new-buds-id" && !x.FromSnapshot) &&
+          !expanded.Any(x=>x.DeviceId=="unmodified-other-id" && !x.FromSnapshot),
+        "Unmodified new endpoint profiles must not be recommended as recoverable history");
+    var flatButUseful=new DeviceProfile{Name="Other DAC",AutoEnabled=true};
+    flatButUseful.AutoFilters.Add(new AutoFilter{Type="PK",Frequency=900,Gain=2,Q=1});
+    Check(!RecoveryBackupStore.IsUntouchedDefaultProfile(flatButUseful) &&
+          RecoveryBackupStore.IsUntouchedDefaultProfile(new DeviceProfile{Name="Galaxy Buds3"}),
+        "Flat EQ must not hide meaningful AutoEQ or other DSP data");
+    Check(expanded.Any(x=>x.FromSnapshot && x.DeviceId=="original-id"),
+        "Old backups must remain selectable even when the target endpoint is new");
+    var isolated=RecoveryBackupStore.CloneProfile(restored);
+    isolated.Custom[0]=12;
+    Check(restored.Custom[0]==4.5,"Recovery must clone profile rather than mutate backup source");
+    var oldFormat=System.Text.Json.JsonSerializer.Deserialize<AppSettings>("{\"profiles\":{}}",SettingsStore.JsonOptions);
+    Check(oldFormat is not null && oldFormat.RecoveryPromptedDeviceIds.Count==0,
+        "Old settings format must deserialize without recovery metadata");
+    Console.WriteLine("PASS: permanent recovery snapshots, 31-band EQ and DSP, legacy metadata");
+}
+finally
+{
+    try{Directory.Delete(recoveryTestRoot,true);}catch(IOException){}
+}

@@ -53,4 +53,4 @@ Run `build_no_setup.bat` to build/test/publish only. This is equivalent to `set 
 
 ## MSI packaging option (WiX)
 
-The original Inno Setup EXE and MSIX test builds remain available. An optional **unsigned MSI** build is included via `build_windows_msi.bat` (full build) or `build_msi.bat` (package existing publish output). See `MSI_BUILD_GUIDE.md` for signing caveats, MSI/Inno coexistence restrictions, and validation checklist.
+The original Inno Setup EXE and MSIX test builds remain available. An optional **unsigned MSI** build is included via `build_windows_msi.bat` (full build) or `build_msi.bat` (package existing publish output). See the MSI build scripts and WiX project for installer details.

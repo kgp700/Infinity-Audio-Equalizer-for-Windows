@@ -1,7 +1,15 @@
+v0.8.45 Beta 변경 파일
+src/FullSettingsRestoreDialog.cs
+src/FullSettingsRestore.cs
 src/MainForm.cs
+tests/Program.cs
 InfinityAudioEqualizerPro.csproj
-installer/InfinityAudioEqualizerPro.iss (version metadata only; Inno distribution disabled)
-USER_GUIDE.md
+installer/InfinityAudioEqualizerPro.iss
 RELEASE_NOTES_DEVELOPER.md
-RELEASE_NOTES_USER.md
 CHANGED_FILES.txt
+
+전체 설정 가져오기 매핑 창에서 보관 전용 선택지를 제거하고 Windows 기본 재생 장치를 기본 선택합니다.
+취소는 가져오기 중단, 복원은 선택된 장치로 백업 프로필 연결을 의미합니다.
+기타 설정·APO·복구 백업 로직은 변경하지 않습니다.
+
+빌드 테스트 수정: tests/Program.cs 662행의 잘못된 fallback 매핑 기대값 교정.

@@ -1,6 +1,6 @@
-﻿#define AppName "Infinity Audio Equalizer Pro for Windows"
+#define AppName "Infinity Audio Equalizer Pro for Windows"
 #ifndef AppVersion
-  #define AppVersion "0.8.28"
+  #define AppVersion "0.8.45"
 #endif
 #define AppExe "InfinityAudioEqualizerProWindows.exe"
 #define AppPublisher "KGP Software Lab"

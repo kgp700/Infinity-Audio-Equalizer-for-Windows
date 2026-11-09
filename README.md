@@ -74,7 +74,7 @@ Sub, Bass, Mid, High의 주파수 경계는 이웃 대역과 겹치지 않는 �
 
 자체 C# 애플리케이션과 컴프레서 C++ 소스는 MIT 라이선스입니다.
 상세 제3자 고지: `THIRD_PARTY_NOTICES.md`, `THIRD_PARTY_LICENSES/`,
-`HRTF_DATA_CREDITS.txt`. 공개 전 체크리스트는 `GITHUB_RELEASE_CHECKLIST.md`에 있습니다.
+`HRTF_DATA_CREDITS.txt`. 공개 전에는 별도로 빌드 및 배포 검증을 진행합니다.
 
 GitHub 소스 저장소에는 바이너리를 올리지 않습니다.
 컴프레서 VST3 바이너리는 검증된 빌드 결과를 GitHub Releases에 별도 배포하며,
@@ -103,4 +103,4 @@ GitHub에서 소스를 새로 받은 경우 VST3 SDK 3.8+를 별도 체크아웃
 
 ## MSI packaging option (WiX)
 
-The original Inno Setup EXE and MSIX test builds remain available. An optional **unsigned MSI** build is included via `build_windows_msi.bat` (full build) or `build_msi.bat` (package existing publish output). See `MSI_BUILD_GUIDE.md` for signing caveats, MSI/Inno coexistence restrictions, and validation checklist.
+The original Inno Setup EXE and MSIX test builds remain available. An optional **unsigned MSI** build is included via `build_windows_msi.bat` (full build) or `build_msi.bat` (package existing publish output). See `INSTALLER_BUILD_AND_UNINSTALL.md` for installation and uninstallation guidance.

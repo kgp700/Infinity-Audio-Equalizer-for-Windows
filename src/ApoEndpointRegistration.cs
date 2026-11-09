@@ -24,12 +24,10 @@ internal static class ApoEndpointRegistration
             using var machine = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
             using var fx = machine.OpenSubKey($@"{RenderEndpoints}\{{{parsed:D}}}\FxProperties");
             if (fx is null) return EndpointApoRegistration.Missing;
-            bool anySlot = false;
             foreach (var name in fx.GetValueNames())
             {
                 if (!name.StartsWith(FxPrefix, StringComparison.OrdinalIgnoreCase)) continue;
                 if (fx.GetValue(name) is not string raw || !Guid.TryParse(raw, out var clsid)) continue;
-                anySlot = true;
                 using var classKey = machine.OpenSubKey($@"SOFTWARE\Classes\CLSID\{{{clsid:D}}}\InprocServer32");
                 string? server = classKey?.GetValue(null) as string;
                 if (string.IsNullOrWhiteSpace(server))

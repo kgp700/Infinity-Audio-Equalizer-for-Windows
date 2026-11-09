@@ -30,7 +30,6 @@ This license does not replace the rights and terms of independent components or 
 - Application C# and compressor C++ source: this project repository (`src/`, `vst3/src/`).
 - Official VST3 SDK: https://github.com/steinbergmedia/vst3sdk (recursively checked out locally for a source build; **not** vendored).
 - KEMAR upstream terms: https://sound.media.mit.edu/resources/KEMAR.html
-- Release checklist: `GITHUB_RELEASE_CHECKLIST.md`.
 - The included prebuilt VST3 binary is **not cryptographically proven** to match the recovered compressor sources. Confirm reproducibility, SDK version, and build provenance before publishing it as an official release.
 
 The older Python/PySide6/PyInstaller runtime notices and LGPL library-replacement guide apply only to *historical Python distributions*, not to the present .NET build. They are intentionally not bundled as the current app's licenses.

@@ -7,7 +7,8 @@ public sealed class AppSettings
 {
     [JsonPropertyName("version")] public int Version { get; set; } = 1;
     [JsonPropertyName("profiles")] public Dictionary<string, DeviceProfile> Profiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    [JsonPropertyName("startup")] public bool Startup { get; set; }
+    [JsonPropertyName("recovery_prompted_device_ids")] public HashSet<string> RecoveryPromptedDeviceIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    [JsonPropertyName("startup")] public bool Startup { get; set; } = true;
     [JsonPropertyName("global_enabled")] public bool GlobalEnabled { get; set; } = false;
     // Safe default for both new and previously saved migration-preview settings.
     [JsonPropertyName("bypass_all_effects")] public bool BypassAllEffects { get; set; } = true;
@@ -20,7 +21,7 @@ public sealed class DeviceProfile
 {
     [JsonPropertyName("name")] public string Name { get; set; } = "새 장치";
     [JsonPropertyName("enabled")] public bool Enabled { get; set; } = true;
-    [JsonPropertyName("auto_enabled")] public bool AutoEnabled { get; set; } = false;
+    [JsonPropertyName("auto_enabled")] public bool AutoEnabled { get; set; } = true;
     [JsonPropertyName("custom_enabled")] public bool CustomEnabled { get; set; } = true;
     [JsonPropertyName("source")] public string Source { get; set; } = "";
     [JsonPropertyName("auto_filters")] public List<AutoFilter> AutoFilters { get; set; } = [];
@@ -32,7 +33,7 @@ public sealed class DeviceProfile
     [JsonPropertyName("low_latency")] public bool LowLatency { get; set; }
     [JsonPropertyName("ambience_enabled")] public bool AmbienceEnabled { get; set; }
     [JsonPropertyName("stereo_width_enabled")] public bool StereoWidthEnabled { get; set; }
-    [JsonPropertyName("stereo_width")] public int StereoWidth { get; set; } = 30;
+    [JsonPropertyName("stereo_width")] public int StereoWidth { get; set; } = 16;
     [JsonPropertyName("surround_mode")] public string SurroundMode { get; set; } = "cinema";
     [JsonPropertyName("surround_strength")] public int SurroundStrength { get; set; } = 45;
     [JsonPropertyName("surround_center")] public int SurroundCenter { get; set; } = 80;
@@ -64,6 +65,11 @@ public sealed class DeviceProfile
     [JsonPropertyName("compressor_theme")] public string CompressorTheme { get; set; } = "OPEN";
     [JsonPropertyName("compressor_strength")] public int CompressorStrength { get; set; } = 12;
     [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+}
+// A single factory is used for new endpoints and resets, preventing drift.
+public static class DeviceProfileDefaults
+{
+    public static DeviceProfile Create(string deviceName) => new() { Name = deviceName };
 }
 public sealed class AutoFilter
 {

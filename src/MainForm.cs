@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 KGP Software Lab. SPDX-License-Identifier: MIT
+// Copyright (c) 2026 KGP Software Lab. SPDX-License-Identifier: MIT
 using System.Drawing;
 using System.Text;
 using System.Text.Json;
@@ -25,6 +25,29 @@ public sealed class MainForm : Form
     private readonly NumericUpDown _width=new(){Minimum=0,Maximum=100,Width=65};
     private readonly ComboBox _preampMode=new(){DropDownStyle=ComboBoxStyle.DropDownList,Width=140};
     private readonly Label _status=new(){AutoSize=true,ForeColor=Color.FromArgb(175,190,205),Text="준비"};
+    // Separate, persistent warning: ordinary status updates must not overwrite an activation failure.
+    // Problem-only banner: never changes user-selected ON/OFF or any DSP settings.
+    private readonly Panel _activationWarning = new()
+    {
+        Visible = false, BackColor = Color.FromArgb(107, 35, 42),
+        BorderStyle = BorderStyle.FixedSingle
+    };
+    private readonly Label _activationWarningTitle = new()
+    {
+        AutoSize = false, Text = "⚠  음향효과 적용 불가!",
+        Font = new Font("Segoe UI", 17f, FontStyle.Bold),
+        ForeColor = Color.White, TextAlign = ContentAlignment.MiddleLeft,
+        Location = new Point(13, 5), Size = new Size(1086, 34)
+    };
+    private readonly Label _activationWarningAction = new()
+    {
+        AutoSize = false,
+        Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+        ForeColor = Color.FromArgb(255, 229, 177),
+        TextAlign = ContentAlignment.MiddleLeft,
+        Location = new Point(19, 41), Size = new Size(1070, 25)
+    };
+    private bool _activationWarningVisible;
     private readonly List<NumericUpDown> _bands=[];
     private readonly List<SlimSlider> _sliders=[];
     private readonly CheckBox _surroundOn=new(){Text="Surround Stage 사용",AutoSize=true};
@@ -204,6 +227,9 @@ public sealed class MainForm : Form
     private bool _connected;
     private bool _pendingChanges;
     private string _selectedId="";
+    private readonly Queue<string> _pendingRecoveryPrompts = new();
+    private bool _recoveryDialogOpen;
+
     private readonly Color _bg=Color.FromArgb(21,26,36);
     private readonly Color _panel=Color.FromArgb(31,38,52);
     private readonly Color _fg=Color.FromArgb(230,238,246);
@@ -216,19 +242,45 @@ public sealed class MainForm : Form
         ClientSize=new Size(1140,1302); MinimumSize=new Size(760,600);
         BackColor=_bg;ForeColor=_fg;Font=new Font("Segoe UI",9);
         StartPosition=FormStartPosition.CenterScreen;
+        // Prepare the complete WinForms control tree and restore device/APO settings
+        // before showing any part of the main window. The original startup painted
+        // individual controls while Load/RefreshDevices was still updating the UI.
+        // Opacity is changed only once: this is an instant reveal, not a fade animation.
+        Opacity = 0;
         if (_startedFromWindowsLogon)
-        {
-            // Keep the initial Show/Load lifecycle (device detection and tray setup)
-            // without presenting a main window or taskbar button at logon.
-            Opacity = 0;
             ShowInTaskbar = false;
-            Shown += (_, _) =>
+        Shown += (_, _) =>
+        {
+            if (_startedFromWindowsLogon)
             {
+                // Windows logon must remain tray-only. A later manual restore shows
+                // an already initialized window, with no startup window flash.
                 Hide();
                 Opacity = 1;
-                ShowInTaskbar = true; // Normal manual tray restoration uses the taskbar.
-            };
-        }
+                ShowInTaskbar = true;
+                return;
+            }
+            // Run after the first Shown message, when WinForms has finished its
+            // native control creation, initial layout and Load state restoration.
+            BeginInvoke((Action)(() =>
+            {
+                if (IsDisposed || Disposing || _reallyExit) return;
+                _contentPanel?.PerformLayout();
+                _mainScroller?.PerformLayout();
+                PerformLayout();
+                Invalidate(true);
+                Update(); // Paint while still hidden, before the one-step reveal.
+                Opacity = 1;
+                // First-run dialogs must never cover a partially drawn main window.
+                BeginInvoke((Action)(() =>
+                {
+                    if (!IsDisposed && !Disposing && !_reallyExit)
+                        ShowInitialApoGuidance();
+                    if (!IsDisposed && !_reallyExit)
+                        BeginInvoke((Action)ShowPendingRecoveryPrompt);
+                }));
+            }));
+        };
         try{Icon=new Icon(Path.Combine(AppContext.BaseDirectory,"assets","Infinity_Audio_Equalizer.ico"));}catch{}
         _preampMode.Items.AddRange(["수동 · 최종값 직접 지정", "AutoEQ 원본 감쇄 + 보정", "자동 감쇄 + 보정"]);
         _compressorTheme.Items.AddRange(CompressorThemes.ThemeIds.Concat(["CUSTOM"])
@@ -241,8 +293,18 @@ public sealed class MainForm : Form
         BuildUi();
         _masterButton.Click += (_,_) => { if (!_engine.Checked) _bypassAll.Checked=false; _engine.Checked=!_engine.Checked; };
         UpgradeExistingStartupCommand();
+        // The approved fresh-install baseline starts at Windows logon, but never
+        // re-enables startup for an existing user who explicitly turned it OFF.
+        bool freshInstallWithoutSettings = !File.Exists(SettingsStore.CurrentFile);
         _startup.Checked=StartupEnabled();
         _startup.CheckedChanged+=(_,_)=> { if (!_loading) SetStartup(_startup.Checked); };
+        if (freshInstallWithoutSettings && _state.Startup && !_startup.Checked)
+        {
+            _loading=true;
+            try { _startup.Checked=true; }
+            finally { _loading=false; }
+            SetStartup(true);
+        }
         _staticMode.CheckedChanged+=(_,_)=> { if (_loading)return; _preampMode.SelectedIndex=_staticMode.Checked?0:2; };
         _deviceTimer.Tick+=(_,_)=>RefreshDevicesIfChanged();
         _tray.Icon=Icon ?? SystemIcons.Application;
@@ -295,10 +357,8 @@ public sealed class MainForm : Form
         Load+=(_,_)=>
         {
             RefreshDevices(); CheckBridge(); RefreshMasterButton(); _deviceTimer.Start();
-            // Do not interrupt Windows logon with a setup/repair dialog.
-            // The regular first-run guidance remains available on manual launch.
-            if (!_startedFromWindowsLogon)
-                BeginInvoke((Action)(() => ShowInitialApoGuidance()));
+            // Manual-launch guidance runs after the first full-window reveal.
+            // Do not show a setup dialog while the window is being initialized.
         };
         // The main content keeps a stable design width; narrower windows scroll horizontally.
         // Avoid resizing AutoSize containers, which can collapse a TopDown WinForms layout.
@@ -398,6 +458,11 @@ public sealed class MainForm : Form
         _status.Location=new Point(12,116);_status.Size=new Size(1118,23);_status.AutoSize=false;
         _status.BackColor=Color.FromArgb(33,43,57);_status.ForeColor=Color.FromArgb(167,216,184);
         _status.TextAlign=ContentAlignment.MiddleLeft;Put(canvas,_status);
+        _activationWarning.Location = new Point(12, 143);
+        _activationWarning.Size = new Size(1118, 76);
+        Put(_activationWarning, _activationWarningTitle);
+        Put(_activationWarning, _activationWarningAction);
+        Put(canvas, _activationWarning);
 
         var profile=UiSection("선택 장치 프리셋",145,253);Put(canvas,profile);
         Put(profile,UiText("프리셋 이름",19,26,100));UiStyle(_profileName,125,30,974,23);
@@ -441,7 +506,7 @@ public sealed class MainForm : Form
         Put(w,track);_widthReadout=UiText("0%",1041,25,55);Put(w,_widthReadout);
         _width.Location=new Point(900,3);_width.Visible=false;Put(w,_width);
 
-        var sr=UiSection("Infinity Audio Equalizer Pro Surround Stage  ·  가상 공간 음향",491,212);Put(canvas,sr);
+        var sr=UiSection("Infinity Surround Stage  ·  가상 공간 음향",491,212);Put(canvas,sr);
         UiStyle(_surroundOn,17,25,145,29);Put(sr,_surroundOn);
         Put(sr,UiText("처리 방식",200,25,65));UiStyle(_surroundProcessing,265,25,155,28);Put(sr,_surroundProcessing);
         Put(sr,UiText("모드",429,25,34));UiStyle(_surroundMode,467,25,100,28);Put(sr,_surroundMode);
@@ -473,7 +538,7 @@ public sealed class MainForm : Form
             Put(balance,balanceControls[i]);
         }
 
-        var amb=UiSection("Infinity Audio Equalizer Pro Studio Ambience  ·  스테레오 공간 잔향",719,65);Put(canvas,amb);
+        var amb=UiSection("Infinity Studio Ambience  ·  스테레오 공간 잔향",719,65);Put(canvas,amb);
         UiStyle(_ambienceOn,15,25,145,28);Put(amb,_ambienceOn);
         Put(amb,UiText("강도",213,25,40));UiStyle(_ambienceStrength,254,25,70,28);Put(amb,_ambienceStrength);
         Put(amb,UiText("잔향 길이",334,25,65));UiStyle(_ambienceDecay,402,25,93,28);Put(amb,_ambienceDecay);
@@ -531,18 +596,30 @@ public sealed class MainForm : Form
         var first=new Panel{Location=new Point(12,1156),Size=new Size(1116,35),BackColor=_bg};Put(canvas,first);
         UiStyle(_startup,4,3,195,29);Put(first,_startup);
         Put(first,UiAction("EqualizerAPO-XT 설치",InstallXt,203,2,222));
-        Put(first,UiAction("Equalizer APO 출력 장치 등록",OpenDeviceSelector,430,2,222));
+        var apoDeviceButton=UiAction("Equalizer APO 출력 장치 등록",OpenDeviceSelector,430,2,222);
+        _featureHelpTip.SetToolTip(apoDeviceButton,
+            "현재 출력 장치를 Equalizer APO-XT에 등록하거나 등록 상태를 변경하는 장치 선택기를 엽니다.\n\n" +
+            "드라이버 변경 또는 블루투스 기기 재등록 후에는 Equalizer APO-XT 출력 장치 등록이나 재연결이 필요할 수 있습니다.");
+        Put(first,apoDeviceButton);
         Put(first,UiAction("Equalizer APO 경로",ChooseApoPath,657,2,222));
         var apoConnectButton=UiAction("Equalizer APO 연결 / 다시 적용",()=>EnsureConnectedAndApply(),884,2,222);
+        _featureHelpTip.SetToolTip(apoConnectButton,
+            "현재 저장된 Infinity 음향 설정을 Equalizer APO-XT에 연결하고 다시 적용합니다.\n" +
+            "출력 장치가 등록되지 않았다면 먼저 'Equalizer APO 출력 장치 등록'을 이용하세요.\n\n" +
+            "드라이버 변경 또는 블루투스 기기 재등록 후에는 Equalizer APO-XT 출력 장치 등록이나 재연결이 필요할 수 있습니다.");
         var apoMenu=new ContextMenuStrip();
         apoMenu.Items.Add("Equalizer APO 연결 해제",null,(_,_)=>{try{DisconnectApo();}catch(Exception ex){ShowError(ex);}});
         apoMenu.Items.Add("Equalizer APO 연결 재구성",null,(_,_)=>{try{RepairApo();}catch(Exception ex){ShowError(ex);}});
         apoConnectButton.ContextMenuStrip=apoMenu;
         Put(first,apoConnectButton);
         var second=new Panel{Location=new Point(12,1198),Size=new Size(1116,38),BackColor=_bg};Put(canvas,second);
-        Put(second,UiAction("전체 설정 초기화",ResetEveryDevice,0,2,364,29));
-        Put(second,UiAction("현재 설정 내보내기",ExportSettings,376,2,364,29));
-        Put(second,UiAction("설정 불러오기",ImportSettings,752,2,364,29));
+        // Four equal-width actions, ordered from routine data operations to destructive reset.
+        const int settingsActionGap=12;
+        int settingsActionWidth=(second.ClientSize.Width-settingsActionGap*3)/4;
+        Put(second,UiAction("현재 설정 내보내기",ExportSettings,0,2,settingsActionWidth,29));
+        Put(second,UiAction("설정 불러오기",ImportSettings,settingsActionWidth+settingsActionGap,2,settingsActionWidth,29));
+        Put(second,UiAction("기존 설정 복구",()=>OpenRecoveryDialog(false),2*(settingsActionWidth+settingsActionGap),2,settingsActionWidth,29));
+        Put(second,UiAction("전체 설정 초기화",ResetEveryDevice,3*(settingsActionWidth+settingsActionGap),2,settingsActionWidth,29));
         _deviceHint=UiText(UiStatusCatalog.DeviceTestHint,12,1240,1100,23);
         Put(canvas,_deviceHint);
         // Keep the public window free of developer-only diagnostics and duplicate APO actions.
@@ -725,6 +802,8 @@ public sealed class MainForm : Form
         finally{_loading=false;}
         SelectDevice();
         _status.Text=$"출력 장치 {devices.Count}개 검색됨 · 장치별 설정을 불러왔습니다.";
+        if(Visible && Opacity>0 && _pendingRecoveryPrompts.Count>0)
+            BeginInvoke((Action)ShowPendingRecoveryPrompt);
     }
     private DeviceProfile? CurrentProfile(){if(string.IsNullOrWhiteSpace(_selectedId))return null;return _state.Profiles.GetValueOrDefault(_selectedId);}
     // One calculation for both saved-profile selection and live edits.
@@ -740,10 +819,33 @@ public sealed class MainForm : Form
                 : $"기준 {Display(details.Baseline)} + 보정 {Display(p.ManualPreamp)} = 최종 {Display(details.Final)}";
     }
 
+    // A new Windows endpoint ID may be created after driver reinstall or re-pairing.
+    // Back up the previous full state before any default profile is created.
+    private bool ProtectBeforeCreatingEndpoint(AudioDevice device)
+    {
+        if(_state.Profiles.ContainsKey(device.Id) || _state.Profiles.Count==0 ||
+           (_state.RecoveryPromptedDeviceIds?.Any(x=>x.Equals(device.Id,StringComparison.OrdinalIgnoreCase)) ?? false))return true;
+        if(_pendingRecoveryPrompts.Any(x=>x.Equals(device.Id,StringComparison.OrdinalIgnoreCase)))return true;
+        try
+        {
+            RecoveryBackupStore.SaveBeforeNewEndpointIfChanged(_state);
+            _pendingRecoveryPrompts.Enqueue(device.Id);
+            return true;
+        }
+        catch(Exception ex)
+        {
+            DiagnosticLog.Error("새 출력 장치 설정 보호",ex);
+            MessageBox.Show(this,"기존 음향 설정을 안전하게 백업하지 못했습니다. 새 장치의 기본 설정 생성은 중단했습니다.\n"+ex.Message,
+                "설정 백업 실패",MessageBoxButtons.OK,MessageBoxIcon.Warning);
+            return false;
+        }
+    }
+
     private void SelectDevice()
     {
         if(_loading)return;
         var d=_devices.SelectedItem as AudioDevice;if(d is null)return;
+        if(!ProtectBeforeCreatingEndpoint(d))return;
         if (!string.Equals(_selectedId,d.Id,StringComparison.OrdinalIgnoreCase))
         {
             bool wasPreview=_state.Profiles.Values.Any(x=>x.DepthComparisonMode.Length>0 || x.AmbienceDiagnostic);
@@ -763,7 +865,9 @@ public sealed class MainForm : Form
         _selectedId=d.Id;
         // Keep every output endpoint's independent profile; never reuse the previous
         // device's AutoEQ, compressor or manual bands for a newly connected headset.
-        if(!_state.Profiles.TryGetValue(d.Id,out var p))_state.Profiles[d.Id]=p=new DeviceProfile{Name=d.Name};
+        if(!_state.Profiles.TryGetValue(d.Id,out var p))_state.Profiles[d.Id]=p=DeviceProfileDefaults.Create(d.Name);
+        if(Visible && Opacity>0 && _pendingRecoveryPrompts.Count>0 && !_recoveryDialogOpen)
+            BeginInvoke((Action)ShowPendingRecoveryPrompt);
         _loading=true;
         try
         {
@@ -1025,8 +1129,12 @@ public sealed class MainForm : Form
             _applyRetryCount=0;_applyTimer.Interval=480;
             _applyTimer.Stop();_applyTimer.Start();
         }
-        else _status.Text = !_engine.Checked || _bypassAll.Checked
-            ? "전체 음향 효과 OFF" : "음향 설정 연결 필요";
+        else
+        {
+            _status.Text = !_engine.Checked || _bypassAll.Checked
+                ? "전체 음향 효과 OFF" : "음향 설정 연결 필요";
+            if (!_loading) RefreshActivationWarning();
+        }
     }
     private void SaveState()
     {
@@ -1037,7 +1145,9 @@ public sealed class MainForm : Form
     {
         if(!SettingsStore.CanImportLegacy){MessageBox.Show("가져올 이전 설정 파일이 없습니다.");return;}
         if(MessageBox.Show("이전 프로그램의 설정을 가져오시겠습니까? 기존 설정 파일은 변경되지 않습니다.","설정 가져오기",MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
-        _state=SettingsStore.ImportLegacyReadOnly();_state.BypassAllEffects=true;SelectDevice();RefreshMasterButton();SaveState();
+        var legacy=SettingsStore.ImportLegacyReadOnly();
+        RecoveryBackupStore.SaveSnapshot(_state,"before_import");
+        _state=legacy;_state.BypassAllEffects=true;SelectDevice();RefreshMasterButton();SaveState();
         if (_connected) { _pendingChanges = true; _applyTimer.Stop(); _applyTimer.Start(); }
         _status.Text="이전 설정을 가져왔습니다. 음향 효과는 꺼진 상태입니다.";
     }
@@ -1046,7 +1156,9 @@ public sealed class MainForm : Form
         var p=CurrentProfile();if(p is null)return;
         using var dlg=new OpenFileDialog{Filter="AutoEQ TXT (*.txt)|*.txt|모든 파일 (*.*)|*.*",Title="AutoEQ Equalizer APO 파일 가져오기"};
         if(dlg.ShowDialog()!=DialogResult.OK)return;
-        AutoEqImporter.Import(File.ReadAllText(dlg.FileName),p,Path.GetFileName(dlg.FileName));
+        string autoEqText=File.ReadAllText(dlg.FileName);
+        RecoveryBackupStore.SaveSnapshot(_state,"before_import");
+        AutoEqImporter.Import(autoEqText,p,Path.GetFileName(dlg.FileName));
         _autoEnabled.Checked=true;SelectDevice();ChangeCurrent("AutoEQ");
         _status.Text=_connected ? "AutoEQ 적용 중... 기존 프리앰프 설정은 유지됩니다."
             : "AutoEQ를 저장했습니다. 출력 장치 연결이 필요합니다.";
@@ -1059,6 +1171,7 @@ public sealed class MainForm : Form
         using var dialog=new AutoEqSearchDialog(selectedDeviceId, "");
         if(dialog.ShowDialog(this)!=DialogResult.OK || dialog.Download is null || dialog.Selection is null)return;
         if(!_state.Profiles.TryGetValue(selectedDeviceId,out var profile))return;
+        RecoveryBackupStore.SaveSnapshot(_state,"before_import");
         AutoEqImporter.Import(dialog.Download.Text,profile,$"{dialog.Selection.Name} ({dialog.Download.Filename})");
         if(string.Equals(_selectedId,selectedDeviceId,StringComparison.OrdinalIgnoreCase))SelectDevice();
         // Persist to the model first; only then ask APO to render the new state.
@@ -1076,6 +1189,7 @@ public sealed class MainForm : Form
     {
         var profile=CurrentProfile();if(profile is null)return;
         if(MessageBox.Show("선택 장치의 AutoEQ 보정값을 제거할까요? 사용자 31밴드 EQ는 유지됩니다.","AutoEQ 제거",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
+        RecoveryBackupStore.SaveSnapshot(_state,"before_device_reset");
         profile.AutoEnabled=false;profile.AutoFilters.Clear();profile.Graphic.Clear();
         profile.AutoPreamp=0;profile.Source="";
         SelectDevice();ChangeCurrent("AutoEQ");
@@ -1090,23 +1204,24 @@ public sealed class MainForm : Form
     private void ResetEq()
     {
         if(MessageBox.Show("선택 장치의 31밴드 EQ 31개 슬라이더와 수치를 0dB로 초기화할까요?\n다른 음향 효과는 유지됩니다.","31밴드 EQ 초기화",MessageBoxButtons.YesNo)!=DialogResult.Yes)return;
+        RecoveryBackupStore.SaveSnapshot(_state,"before_eq_reset");
         _loading=true;
         try { for(int i=0;i<_bands.Count;i++){_bands[i].Value=0;_sliders[i].Value=0;} }
         finally { _loading=false; }
         ChangeCurrent("31밴드 EQ");
     }
+    // Single source of truth for a newly discovered endpoint and the reset actions.
+    // Keep the endpoint ID and its display name while resetting every DSP parameter,
+    // including modes that are currently disabled in the UI.
+    private static DeviceProfile FreshProfileFor(string name) => DeviceProfileDefaults.Create(name);
+
     private void ResetAllEffects()
     {
         var p=CurrentProfile();if(p is null)return;
-        if(MessageBox.Show("선택한 장치의 EQ·AutoEQ·프리앰프·컴프레서·스테레오 확장을 모두 초기화하고 끌까요?\n이 작업은 선택 장치에만 적용됩니다. 이후 설정은 즉시 저장됩니다.",
+        if(MessageBox.Show("선택 장치의 모든 음향 설정을 기본값으로 되돌릴까요?\n이 작업은 선택 장치에만 적용됩니다. 이후 설정은 즉시 저장됩니다.",
             "선택 장치 전체 효과 초기화",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
-        p.Custom=Enumerable.Repeat(0d,ApoRenderer.Bands.Length).ToList();
-        p.CustomEnabled=false;
-        p.AutoEnabled=false;p.AutoFilters.Clear();p.Graphic.Clear();p.AutoPreamp=0;p.Source="";
-        p.ManualPreamp=0;p.PreampMode="manual";p.DepthComparisonMode="";
-        p.CompressorEnabled=false;p.StereoWidthEnabled=false;p.StereoWidth=0;
-        p.AmbienceEnabled=false;p.AmbienceStrength=3;p.AmbienceDecay=180;p.AmbienceRate=48000;
-        p.SurroundEnabled=false;p.Surround3Enabled=false;p.Surround3Depth=80;p.Surround3Rear=75;p.Surround3Front=75;p.Surround3Separation=80;p.SurroundBinaural=false;p.SurroundStable=false;p.SurroundBalanced=false;p.SurroundBalanceStability=65;p.SurroundBalanceSpace=80;p.SurroundBalanceDepth=55;p.SurroundMode="natural";p.SurroundStrength=45;p.SurroundCenter=80;p.SurroundSpread=45;
+        RecoveryBackupStore.SaveSnapshot(_state,"before_device_reset");
+        _state.Profiles[_selectedId]=FreshProfileFor(p.Name);
         SelectDevice();
         ChangeCurrent();
         if (_connected) SynchronizeNow();
@@ -1115,16 +1230,19 @@ public sealed class MainForm : Form
     {
         if(MessageBox.Show("모든 출력 장치의 음향 설정을 초기화하시겠습니까? 저장된 EQ, AutoEQ 및 공간 음향 설정이 초기화됩니다.",
             "모든 장치 효과 초기화",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
-        foreach(var p in _state.Profiles.Values)
-        {
-            p.Custom=Enumerable.Repeat(0d,ApoRenderer.Bands.Length).ToList();
-            p.CustomEnabled=false;p.AutoEnabled=false;p.AutoFilters.Clear();p.Graphic.Clear();p.AutoPreamp=0;p.Source="";
-            p.ManualPreamp=0;p.PreampMode="manual";p.DepthComparisonMode="";
-            p.CompressorEnabled=false;p.StereoWidthEnabled=false;p.StereoWidth=0;
-            p.AmbienceEnabled=false;p.AmbienceStrength=3;p.AmbienceDecay=180;p.AmbienceRate=48000;
-        p.SurroundEnabled=false;p.Surround3Enabled=false;p.Surround3Depth=80;p.Surround3Rear=75;p.Surround3Front=75;p.Surround3Separation=80;p.SurroundBinaural=false;p.SurroundStable=false;p.SurroundBalanced=false;p.SurroundBalanceStability=65;p.SurroundBalanceSpace=80;p.SurroundBalanceDepth=55;p.SurroundMode="natural";p.SurroundStrength=45;p.SurroundCenter=80;p.SurroundSpread=45;
-        }
+        RecoveryBackupStore.SaveSnapshot(_state,"before_all_reset");
+        foreach(var id in _state.Profiles.Keys.ToList())
+            _state.Profiles[id]=FreshProfileFor(_state.Profiles[id].Name);
+        _state.GlobalEnabled=false;
         _state.BypassAllEffects=true;
+        // The screenshot-approved reset baseline also has Windows startup checked.
+        if (!_startup.Checked)
+        {
+            _loading=true;
+            try { _startup.Checked=true; }
+            finally { _loading=false; }
+            SetStartup(true);
+        }
         SelectDevice();
         ChangeCurrent();
         if (_connected) SynchronizeNow();
@@ -1170,6 +1288,7 @@ public sealed class MainForm : Form
             // Synchronize the real output with saved UI state immediately.
             SynchronizeNow();
         }
+        RefreshActivationWarning();
     }
     // Single user-facing action: perform a first-time bridge connection if needed,
     // otherwise force a full render of the current UI/model into the active XT path.
@@ -1466,10 +1585,61 @@ public sealed class MainForm : Form
     {
         if (_xtInstallBusy) return;
         _xtInstallBusy = true;
+        // Modeless progress keeps the main form and native XT installer responsive.
+        using var progressWindow = new Form
+        {
+            Text = "EqualizerAPO-XT 설치 진행",
+            ClientSize = new Size(460, 156),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            MaximizeBox = false, MinimizeBox = false,
+            ShowInTaskbar = false, ControlBox = false,
+            BackColor = _bg, ForeColor = _fg, Font = Font
+        };
+        var stageLabel = new Label
+        {
+            Text = "최신 릴리스 정보 확인 중...", AutoSize = false,
+            Location = new Point(20, 18), Size = new Size(420, 28),
+            ForeColor = _fg
+        };
+        var detailLabel = new Label
+        {
+            Text = "공식 GitHub에서 설치 파일을 가져옵니다.", AutoSize = false,
+            Location = new Point(20, 105), Size = new Size(420, 32),
+            ForeColor = _fg
+        };
+        var progressBar = new ProgressBar
+        {
+            Location = new Point(20, 57), Size = new Size(420, 26),
+            Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 30
+        };
+        progressWindow.Controls.AddRange([stageLabel, detailLabel, progressBar]);
+        // Report callbacks run on the WinForms synchronization context.
+        var downloadProgress = new Progress<XtSetupService.DownloadProgress>(p =>
+        {
+            if (progressWindow.IsDisposed || IsDisposed) return;
+            stageLabel.Text = p.Stage;
+            string retry = p.Attempt > 1
+                ? $"재시도 {p.Attempt}/{p.MaxAttempts} · 브라우저 호환 연결" : "공식 GitHub 연결";
+            if (p.Stage == "설치 파일 다운로드 중" && p.Total is > 0)
+            {
+                progressBar.Style = ProgressBarStyle.Continuous;
+                progressBar.Value = (int)Math.Clamp(p.Downloaded * 100 / p.Total.Value, 0, 100);
+                detailLabel.Text = $"{p.Downloaded / 1048576d:0.0} / {p.Total.Value / 1048576d:0.0} MB · {retry}";
+            }
+            else
+            {
+                progressBar.Style = ProgressBarStyle.Marquee;
+                detailLabel.Text = retry;
+            }
+        });
+        progressWindow.Show(this);
         try
         {
             _status.Text = UiStatusCatalog.Downloading;
-            var setup = await XtSetupService.DownloadVerifiedAsync();
+            var setup = await XtSetupService.DownloadVerifiedAsync(downloadProgress);
+            // Close our progress window before the external installer's own UI appears.
+            if (!progressWindow.IsDisposed) progressWindow.Close();
             using var installer = XtSetupService.RunInstaller(setup);
             _status.Text = "EqualizerAPO-XT 설치 중...";
             await installer.WaitForExitAsync();
@@ -1520,7 +1690,11 @@ public sealed class MainForm : Form
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
                     "https://github.com/115dkk/EqualizerAPO-XT/releases") { UseShellExecute = true });
         }
-        finally { _xtInstallBusy = false; }
+        finally
+        {
+            if (!progressWindow.IsDisposed) progressWindow.Close();
+            _xtInstallBusy = false;
+        }
     }
 
     private void LocateXtInstallation()
@@ -1781,6 +1955,7 @@ public sealed class MainForm : Form
             if (_state.GlobalEnabled && !_state.BypassAllEffects)
                 UpdateApoRegistrationStatus();
             if (_deviceHint is not null) _deviceHint.Text = UiStatusCatalog.DeviceTestHint;
+            RefreshActivationWarning();
         }
         catch (Exception ex)
         {
@@ -1794,6 +1969,7 @@ public sealed class MainForm : Form
             if (ex is not IOException && ex is not UnauthorizedAccessException)
                 _status.Text=$"{_lastChangedEffect} 적용 실패. 연결 상태를 확인해 주세요.";
             _pendingChanges = true; // never claim an unsuccessful write was applied
+            RefreshActivationWarning();
             // Retry after an APO file reader releases its temporary lock. Do not
             // retry permanent access errors indefinitely or claim success.
             if ((ex is IOException || ex is UnauthorizedAccessException) && _applyRetryCount < 2)
@@ -1811,6 +1987,64 @@ public sealed class MainForm : Form
         File.WriteAllText(dlg.FileName,ApoRenderer.Render(_state),new UTF8Encoding(false));
         _status.Text="APO 설정을 내보냈습니다. 실제 오디오 엔진에는 자동 적용하지 않았습니다.";
     }
+    // This is display-only: NEVER change GlobalEnabled, BypassAllEffects, or device profiles.
+    // Unknown endpoint registration is not treated as a confirmed failure.
+    private void RefreshActivationWarning()
+    {
+        if (IsDisposed || Disposing || _contentPanel is null) return;
+        string? reason = null;
+        if (_engine.Checked && !_bypassAll.Checked)
+        {
+            try
+            {
+                var issue = IndependentlyDiagnoseActivation(out _);
+                reason = issue switch
+                {
+                    ActivationIssue.XtMissing => "XT 설치 필요. 'EqualizerAPO-XT 설치' 버튼을 눌러 설치해주세요.",
+                    ActivationIssue.DeviceNotRegistered => "출력 장치 등록 필요. 'Equalizer APO 출력 장치 등록' 버튼을 눌러 등록해주세요.",
+                    ActivationIssue.ConfigMissing => "APO 설정 경로 선택 필요. 'Equalizer APO 경로' 버튼을 눌러 설정해주세요.",
+                    ActivationIssue.BridgeMissing => "음향 설정 연결 필요. 'Equalizer APO 연결 / 다시 적용' 버튼을 눌러 연결해주세요.",
+                    _ => null
+                };
+                // A missing connection can be reported by the currently active app session
+                // even while an independent on-disk check appears healthy. Keep the warning
+                // visible until this session has actually connected; do not mislabel it as XT
+                // missing or silently show a green master button for an unconnected session.
+                if (reason is null && !_connected)
+                    reason = "음향 설정 연결 필요. 'Equalizer APO 연결 / 다시 적용' 버튼을 눌러 연결해주세요.";
+            }
+            catch (Exception ex)
+            {
+                DiagnosticLog.Error("음향효과 경고 상태 갱신", ex);
+                if (!_connected)
+                    reason = "음향 설정 연결 필요. 'Equalizer APO 연결 / 다시 적용' 버튼을 눌러 연결해주세요.";
+            }
+        }
+        bool show = reason is not null;
+        _activationWarningAction.Text = reason ?? "";
+        if (_activationWarningVisible != show)
+        {
+            const int extraHeight = 82;
+            // Shift top-level sections only. Leave normal-mode layout untouched.
+            _contentPanel.SuspendLayout();
+            try
+            {
+                int shift = show ? extraHeight : -extraHeight;
+                foreach (Control control in _contentPanel.Controls)
+                    if (control != _activationWarning && control.Top >= (show ? 145 : 145 + extraHeight))
+                        control.Top += shift;
+                _contentPanel.Height += shift;
+                _activationWarningVisible = show;
+            }
+            finally { _contentPanel.ResumeLayout(true); }
+        }
+        _activationWarning.Visible = show;
+        _masterButton.Text = show ? "⚠ 적용 불가" : (_engine.Checked && !_bypassAll.Checked ? "전체 효과 ON" : "전체 효과 OFF");
+        _masterButton.Tone = show || !_engine.Checked || _bypassAll.Checked
+            ? AccentButtonTone.Danger : AccentButtonTone.Success;
+        _masterButton.ForeColor = Color.White;
+    }
+
     private void RefreshMasterButton()
     {
         bool on=_engine.Checked && !_bypassAll.Checked;
@@ -1824,6 +2058,7 @@ public sealed class MainForm : Form
         _masterButton.Text=on ? "전체 효과 ON" : "전체 효과 OFF";
         _masterButton.Tone=on ? AccentButtonTone.Success : AccentButtonTone.Danger;
         _masterButton.ForeColor=Color.White;
+        RefreshActivationWarning();
         RefreshDepthComparisonButtons();
     }
     // Shared by tray actions and the second-launch single-instance notification.
@@ -1834,6 +2069,8 @@ public sealed class MainForm : Form
         if (!Visible) Show();
         BringToFront();
         Activate();
+        if(_pendingRecoveryPrompts.Count>0 && Opacity>0)
+            BeginInvoke((Action)ShowPendingRecoveryPrompt);
     }
     private void ExitFromTray()
     {
@@ -1923,6 +2160,7 @@ public sealed class MainForm : Form
                 var p=CurrentProfile();
                 if(p is {AmbienceRateAuto:true}) UpdateSelectedSampleRate(true);
             }
+            RefreshActivationWarning();
         }
         catch { /* A transient Bluetooth disconnect should not crash the UI. */ }
     }
@@ -2245,16 +2483,89 @@ public sealed class MainForm : Form
         File.WriteAllText(dlg.FileName,json,new UTF8Encoding(false));
         _status.Text=sharing?"음향 효과 공유 파일을 저장했습니다. 장치 ID와 개인 경로는 제외됩니다.":"전체 설정 백업을 저장했습니다. 개인 PC 정보가 포함될 수 있습니다.";
     }
+    // Recovery dialog used both for new Windows endpoints and explicit user requests.
+    // Never bind a profile solely because its friendly name matches.
+    private void ShowPendingRecoveryPrompt()
+    {
+        if(_recoveryDialogOpen || !Visible || Opacity<=0 || IsDisposed || _reallyExit)return;
+        while(_pendingRecoveryPrompts.Count>0)
+        {
+            string id=_pendingRecoveryPrompts.Dequeue();
+            if(_state.RecoveryPromptedDeviceIds?.Contains(id) ?? false)continue;
+            List<AudioDevice> active;
+            try{active=AudioDeviceEnumerator.GetActiveRenderDevices();}
+            catch(Exception ex){DiagnosticLog.Error("복구 대상 장치 확인",ex);continue;}
+            if(!active.Any(d=>d.Id.Equals(id,StringComparison.OrdinalIgnoreCase)))continue;
+            // Only one prompt per new ID even if Bluetooth connection notifications repeat.
+            _state.RecoveryPromptedDeviceIds ??= new(StringComparer.OrdinalIgnoreCase);
+            _state.RecoveryPromptedDeviceIds.Add(id);
+            try
+            {
+                SettingsStore.Save(_state);
+                OpenRecoveryDialog(true,id);
+            }
+            catch(Exception ex)
+            {
+                DiagnosticLog.Error("기존 설정 복구 안내",ex);
+                MessageBox.Show(this,"기존 설정 복구 창을 열지 못했습니다. 하단 '기존 설정 복구' 버튼에서 다시 시도할 수 있습니다.\n"+ex.Message,
+                    "기존 설정 복구",MessageBoxButtons.OK,MessageBoxIcon.Warning);
+            }
+            break;
+        }
+    }
+
+    private void OpenRecoveryDialog(bool automatic,string? targetId=null)
+    {
+        if(_recoveryDialogOpen)return;
+        var devices=AudioDeviceEnumerator.GetActiveRenderDevices();
+        if(devices.Count==0)
+        {MessageBox.Show(this,"현재 연결된 출력 장치가 없습니다.","기존 설정 복구");return;}
+        var entries=RecoveryBackupStore.ListEntries(_state);
+        if(entries.Count==0)
+        {MessageBox.Show(this,"복구할 이전 장치 설정이 없습니다.","기존 설정 복구");return;}
+        _recoveryDialogOpen=true;
+        try
+        {
+            using var dialog=new RecoverySettingsDialog(devices,targetId??_selectedId,entries,automatic);
+            if(dialog.ShowDialog(this)!=DialogResult.OK)return;
+            string? target=dialog.TargetId;
+            var chosen=dialog.SelectedEntry;
+            if(string.IsNullOrWhiteSpace(target) || chosen is null)return;
+            var device=devices.FirstOrDefault(d=>d.Id.Equals(target,StringComparison.OrdinalIgnoreCase));
+            if(device is null || !AudioDeviceEnumerator.GetActiveRenderDevices().Any(d=>d.Id.Equals(target,StringComparison.OrdinalIgnoreCase)))
+            {MessageBox.Show(this,"선택한 출력 장치가 연결되어 있지 않습니다. 다시 선택해주세요.","기존 설정 복구");return;}
+            if(MessageBox.Show(this,$"'{chosen.DeviceName}'에서 사용했던 음향 설정을\n'{device.Name}' 장치에 복원하시겠습니까?\n\n현재 장치 설정은 안전 백업에 보존되며 다른 장치 설정은 유지됩니다.",
+                "음향 설정 복구",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
+            RecoveryBackupStore.SaveSnapshot(_state,"before_restore");
+            var copy=RecoveryBackupStore.CloneProfile(chosen.Profile);
+            copy.Name=device.Name;
+            _state.Profiles[target]=copy;
+            _state.RecoveryPromptedDeviceIds ??= new(StringComparer.OrdinalIgnoreCase);
+            _state.RecoveryPromptedDeviceIds.Add(target);
+            SettingsStore.Save(_state);
+            if(string.Equals(_selectedId,target,StringComparison.OrdinalIgnoreCase))SelectDevice();
+            if(_connected)SynchronizeNow();
+            _status.Text="선택한 장치의 음향 설정을 복원했습니다.";
+            MessageBox.Show(this,
+                "31밴드 EQ와 기타 음향효과 설정을 복원했습니다.\n\n드라이버 변경 또는 블루투스 재등록 후에는 Equalizer APO-XT 출력 장치 등록이나 재연결이 필요할 수 있습니다.",
+                "음향 설정 복원 완료",MessageBoxButtons.OK,MessageBoxIcon.Information);
+        }
+        finally{_recoveryDialogOpen=false;}
+    }
+
     private void ImportSettings()
     {
         using var dlg=new OpenFileDialog{Filter="JSON 파일 (*.json)|*.json",Title="설정 불러오기"};
         if(dlg.ShowDialog(this)!=DialogResult.OK)return;
         string content=File.ReadAllText(dlg.FileName);
-        if(EffectTransfer.IsShare(content))
+        bool restoringFullBackup=!EffectTransfer.IsShare(content);
+        int restoredDeviceMappingCount=0;
+        if(!restoringFullBackup)
         {
             if(string.IsNullOrWhiteSpace(_selectedId)){MessageBox.Show("먼저 적용할 출력 장치를 선택하세요.");return;}
             var imported=EffectTransfer.ImportShare(content);
             if(MessageBox.Show("현재 장치의 AutoEQ는 유지하고 다른 음향 효과 설정을 가져옵니다. 계속할까요?","공유 설정 적용",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
+            RecoveryBackupStore.SaveSnapshot(_state,"before_import");
             _state.Profiles[_selectedId]=EffectTransfer.MergeIntoDevice(CurrentProfile() ?? new DeviceProfile(), imported);
         }
         else
@@ -2262,12 +2573,63 @@ public sealed class MainForm : Form
             var candidate=JsonSerializer.Deserialize<AppSettings>(content,SettingsStore.JsonOptions)
                 ??throw new InvalidDataException("설정 파일 형식이 올바르지 않습니다.");
             if(candidate.Profiles is null)throw new InvalidDataException("장치 프로필이 없습니다.");
-            if(MessageBox.Show("내 컴퓨터용 전체 백업을 복원합니다. 현재 설정이 변경됩니다. 계속할까요?","전체 설정 복원",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+            if(candidate.Profiles.Count==0)
+                throw new InvalidDataException("백업에 복원할 출력 장치 프로필이 없습니다.");
+            // The current device IDs can change when drivers are removed and reinstalled.
+            // Restore archived profiles without deleting them, then let the user explicitly
+            // associate old profiles with new endpoint IDs before updating live settings.
+            var liveDevices=AudioDeviceEnumerator.GetActiveRenderDevices();
+            var unmatched=FullSettingsRestore.FindUnmatchedCurrentDevices(candidate,liveDevices);
+            var archived=FullSettingsRestore.FindArchivedProfiles(candidate,liveDevices);
+            Dictionary<string,string> mappings=new(StringComparer.OrdinalIgnoreCase);
+            if(unmatched.Count>0 && archived.Count>0)
+            {
+                using var mappingDialog=new FullSettingsRestoreDialog(archived,unmatched,AudioDeviceEnumerator.GetDefaultRenderDeviceId());
+                if(mappingDialog.ShowDialog(this)!=DialogResult.OK)return;
+                mappings=mappingDialog.Mappings;
+            }
+            else if(!candidate.Profiles.Keys.Any(id=>liveDevices.Any(d=>d.Id.Equals(id,StringComparison.OrdinalIgnoreCase))))
+            {
+                if(MessageBox.Show(this,
+                    "현재 연결된 출력 장치가 백업에 없습니다. 기존 프로필을 보관 상태로 복원할까요?\n\n출력 장치를 연결한 후 다시 백업을 가져오면 장치를 선택할 수 있습니다.",
+                    "출력 장치 연결 안내",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
+            }
+            if(mappings.Count==0 && !candidate.Profiles.Keys.Any(id=>liveDevices.Any(d=>d.Id.Equals(id,StringComparison.OrdinalIgnoreCase))))
+            {
+                if(MessageBox.Show(this,
+                    "현재 사용 중인 출력 장치에는 복원할 프로필이 연결되지 않았습니다.\n계속하면 백업은 보존되지만 현재 장치에는 기본 EQ가 표시될 수 있습니다.\n\n그래도 진행할까요?",
+                    "현재 장치에 적용할 설정 없음",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+            }
+            if(MessageBox.Show(this,
+                $"내 컴퓨터용 전체 백업을 복원합니다.\n기존 장치 설정 {candidate.Profiles.Count}개 · 새 장치에 연결 {mappings.Count}개\n\n현재 저장된 설정이 변경됩니다. 계속할까요?",
+                "전체 설정 복원",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
+            RecoveryBackupStore.SaveSnapshot(_state,"before_import");
+            restoredDeviceMappingCount=FullSettingsRestore.ApplyMappings(candidate,mappings,liveDevices);
             _state=candidate;
-            _state.ApoConfig=""; // Never redirect to a foreign machine's protected config folder.
+            _state.ApoConfig=""; // Re-discover the local XT path, never reuse a stale backup path.
+            // Restoring a profile does not register an endpoint; use the existing
+            // activation warning to guide XT install/device registration/bridge repair.
         }
         SettingsStore.Save(_state);RefreshDevices();SelectDevice();RefreshMasterButton();
         if(_connected)SynchronizeNow();
+        if(restoringFullBackup)
+        {
+            _status.Text="전체 설정 복원 완료 · 음향효과가 적용되지 않으면 XT 설치 및 출력 장치 등록, APO 연결 상태를 확인하세요.";
+            // Only show this after the user actually maps an archived profile to a
+            // new endpoint ID. Neither restore nor this notice modifies APO device registration.
+            if(restoredDeviceMappingCount>0)
+            {
+                MessageBox.Show(this,
+                    $"기존 음향 설정을 현재 출력 장치 {restoredDeviceMappingCount}개에 복원했습니다.\n" +
+                    "31밴드 EQ와 기타 음향효과 설정이 복원되었습니다.\n\n" +
+                    "드라이버 변경 또는 블루투스 기기 재등록 후에는 Equalizer APO-XT 출력 장치 등록이나 재연결이 필요할 수 있습니다.\n\n" +
+                    "음향효과가 적용되지 않으면 'Equalizer APO 출력 장치 등록' 버튼에서 현재 재생 장치의 등록 상태를 확인하고, " +
+                    "필요한 경우 'Equalizer APO 연결 / 다시 적용' 버튼을 눌러주세요.",
+                    "음향 설정 복원 완료", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+        else
+            _status.Text="공유용 음향 설정을 적용했습니다.";
     }
 
 }
